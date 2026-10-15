@@ -19,6 +19,7 @@ const AdminEditEvent = lazy(() => import('./pages/AdminEditEvent'))
 const AdminEventRegistrations = lazy(() => import('./pages/AdminEventRegistrations'))
 const AdminMembershipRequests = lazy(() => import('./pages/AdminMembershipRequests'))
 const DigitalMemberIdCard = lazy(() => import('./pages/DigitalMemberIdCard'))
+const MemberDashboard = lazy(() => import('./pages/MemberDashboard'))
 const EventAttendanceScanner = lazy(() => import('./pages/EventAttendanceScanner'))
 const AdminEventCheckInQR = lazy(() => import('./pages/AdminEventCheckInQR'))
 const AdminEventAttendance = lazy(() => import('./pages/AdminEventAttendance'))
@@ -43,7 +44,7 @@ function RootRedirect() {
       return <Navigate to="/manager/dashboard" replace />
     }
     if (user?.role === 'member') {
-      return <Navigate to="/member/id-card" replace />
+      return <Navigate to="/member/dashboard" replace />
     }
     return <Navigate to="/admin/dashboard" replace />
   }
@@ -113,12 +114,13 @@ function App() {
         <Route path="/admin/spin-wheel/fullscreen" element={<AdminProtectedRoute><AdminSpinWheelFullscreen /></AdminProtectedRoute>} />
         <Route path="/manager/dashboard" element={<AdminProtectedRoute><EventManagerDashboard /></AdminProtectedRoute>} />
         <Route path="/manager/attendance/:eventId" element={<AdminProtectedRoute><EventManagerAttendance /></AdminProtectedRoute>} />
+        <Route path="/member/dashboard" element={<MemberProtectedRoute><MemberDashboard /></MemberProtectedRoute>} />
         <Route path="/member/id-card" element={<MemberProtectedRoute><DigitalMemberIdCard /></MemberProtectedRoute>} />
         <Route path="/scanner/:eventId" element={<AdminProtectedRoute><EventAttendanceScanner /></AdminProtectedRoute>} />
         <Route path="/admin/event-checkin-qr/:id" element={<AdminProtectedRoute><AdminEventCheckInQR /></AdminProtectedRoute>} />
         <Route path="/admin/event-attendance/:id" element={<AdminProtectedRoute><AdminEventAttendance /></AdminProtectedRoute>} />
-        <Route path="/member/profile/:id" element={<AdminProtectedRoute><MemberProfileActivityLog /></AdminProtectedRoute>} />
-        <Route path="/member/:id" element={<AdminProtectedRoute><MemberProfileActivityLog /></AdminProtectedRoute>} />
+        <Route path="/member/profile/:id" element={<MemberProtectedRoute><MemberProfileActivityLog /></MemberProtectedRoute>} />
+        <Route path="/member/:id" element={<MemberProtectedRoute><MemberProfileActivityLog /></MemberProtectedRoute>} />
         <Route path="/settings" element={<AdminProtectedRoute><Settings /></AdminProtectedRoute>} />
         <Route path="/admin/certificate-templates" element={<AdminProtectedRoute><AdminCertificateTemplates /></AdminProtectedRoute>} />
       </Routes>

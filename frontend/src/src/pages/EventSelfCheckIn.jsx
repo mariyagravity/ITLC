@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import html2canvas from 'html2canvas'
+import ForgotPinModal from '../components/ForgotPinModal'
 
 const BACKEND_URL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL)
   ? import.meta.env.VITE_API_URL.replace(/\/api$/, '')
@@ -21,6 +22,7 @@ export default function EventSelfCheckIn() {
   const [step, setStep] = useState('phone') // 'phone' | 'pin' | 'success' | 'already' | 'not-registered'
   const [phoneNumber, setPhoneNumber] = useState('')
   const [pin, setPin] = useState('')
+  const [showForgotPinModal, setShowForgotPinModal] = useState(false)
   const [match, setMatch] = useState(null) // { type: 'member'|'guest', member, registration }
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
@@ -517,14 +519,48 @@ export default function EventSelfCheckIn() {
                 autoFocus
                 className="w-full px-4 py-3 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-center text-2xl tracking-[0.5em] focus:outline-none focus:ring-2 focus:ring-primary mb-3"
               />
+              <div className="flex justify-end mb-2">
+                <button
+                  type="button"
+                  onClick={() => setShowForgotPinModal(true)}
+                  className="text-xs font-semibold text-primary hover:underline cursor-pointer"
+                >
+                  Forgot PIN?
+                </button>
+              </div>
+
               {error && <p className="text-sm text-red-500 mb-3">{error}</p>}
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-primary hover:bg-primary/90 disabled:bg-primary/50 text-white font-bold py-3 rounded-lg transition-colors"
+                className="w-full bg-primary hover:bg-primary/90 disabled:bg-primary/50 text-white font-bold py-3 rounded-lg transition-colors cursor-pointer"
               >
                 {loading ? 'Verifying...' : 'Check In'}
               </button>
+
+              <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-700/60 text-center">
+                <button
+                  type="button"
+                  onClick={() => setShowForgotPinModal(true)}
+                  className="text-xs text-primary hover:underline inline-flex items-center gap-1 cursor-pointer font-medium"
+                >
+                  <span className="material-symbols-outlined text-sm">lock_reset</span>
+                  Forgot or need to set your PIN? Click here
+                </button>
+              </div>
+
+              <ForgotPinModal
+                isOpen={showForgotPinModal}
+                onClose={() => setShowForgotPinModal(false)}
+                initialPhone={phoneNumber || match?.member?.phone_number || ''}
+                onSuccess={async ({ newPin }) => {
+                  setPin(newPin)
+                  if (match?.member) {
+                    match.member.login_pin = newPin
+                  }
+                  await performCheckIn(match)
+                }}
+              />
             </form>
           )}
 

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { formatErrorMessage } from '../utils/errorHandler'
+import ForgotPinModal from '../components/ForgotPinModal'
 
 const DEFAULT_EVENT_IMAGE = 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&q=80'
 const DEFAULT_PAGE_TITLE = 'IT Leaders Community (ITLC)'
@@ -35,6 +36,7 @@ export default function EventRegistrationConfirmation() {
   const [toast, setToast] = useState({ show: false, message: '', type: 'error' })
   const [pin, setPin] = useState('')
   const [pinLoading, setPinLoading] = useState(false)
+  const [showForgotPinModal, setShowForgotPinModal] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
   const [isEditingProfile, setIsEditingProfile] = useState(false)
   const [editedMember, setEditedMember] = useState(null)
@@ -724,6 +726,15 @@ export default function EventRegistrationConfirmation() {
                     required
                   />
                 </div>
+                <div className="flex justify-end mt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotPinModal(true)}
+                    className="text-xs font-semibold text-primary hover:underline hover:text-primary/90 cursor-pointer"
+                  >
+                    Forgot PIN?
+                  </button>
+                </div>
               </div>
 
               {error && (
@@ -741,6 +752,17 @@ export default function EventRegistrationConfirmation() {
               </button>
             </form>
 
+            <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 text-center">
+              <button
+                type="button"
+                onClick={() => setShowForgotPinModal(true)}
+                className="text-xs font-medium text-primary hover:underline inline-flex items-center gap-1 cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-sm">lock_reset</span>
+                Forgot or need to set your PIN? Click here
+              </button>
+            </div>
+
             {/* Back Button */}
             <button
               onClick={() => {
@@ -749,10 +771,34 @@ export default function EventRegistrationConfirmation() {
                 setPin('')
                 setError(null)
               }}
-              className="w-full text-center text-slate-600 dark:text-slate-400 text-sm mt-6 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
+              className="w-full text-center text-slate-600 dark:text-slate-400 text-sm mt-4 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
             >
               Go Back
             </button>
+
+            {/* Reusable Forgot / Set PIN Modal */}
+            <ForgotPinModal
+              isOpen={showForgotPinModal}
+              onClose={() => setShowForgotPinModal(false)}
+              initialPhone={phoneNumber || member?.phone_number || ''}
+              onSuccess={async ({ newPin }) => {
+                setPin(newPin)
+                setMember(prev => ({ ...prev, login_pin: newPin }))
+                showToast('PIN updated successfully! Proceeding...', 'success')
+                try {
+                  const { data: regData } = await supabase
+                    .from('event_registrations')
+                    .select('*')
+                    .eq('event_id', eventId)
+                    .eq('member_id', member.id)
+                    .maybeSingle()
+                  setRegistration(regData)
+                  setStep('confirm')
+                } catch (e) {
+                  console.error('Error fetching registration:', e)
+                }
+              }}
+            />
           </div>
         </div>
       </div>

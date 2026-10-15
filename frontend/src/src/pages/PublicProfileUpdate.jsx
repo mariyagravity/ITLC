@@ -413,9 +413,19 @@ export default function PublicProfileUpdate() {
                     required
                   />
                 </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                  Enter the PIN you created for secure access
-                </p>
+                <div className="flex justify-between items-center mt-2">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Enter the PIN you created for secure access
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleForgotPin}
+                    disabled={pinLoading}
+                    className="text-xs font-semibold text-primary hover:underline cursor-pointer"
+                  >
+                    Forgot PIN?
+                  </button>
+                </div>
               </div>
 
               <button

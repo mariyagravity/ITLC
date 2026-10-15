@@ -58,10 +58,13 @@ export const authService = {
       console.log(`[DEV MODE] Forgot PIN request for ${member.email}. Temp PIN is: ${tempPin}`);
     }
 
+    const maskedEmail = member.email ? member.email.replace(/(.{2})(.*)(@.*)/, '$1***$3') : '';
+
     return {
       success: true,
       message: 'PIN reset code sent to your email',
-      emailSent: !!mailtrapToken
+      emailSent: !!mailtrapToken,
+      maskedEmail
     };
   },
 
