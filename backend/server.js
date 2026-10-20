@@ -500,6 +500,26 @@ app.post('/api/query', async (req, res) => {
       let sql = '';
       const params = [];
 
+      // Helper to format ISO datetime values to MySQL DATETIME compatible string ('YYYY-MM-DD HH:MM:SS')
+      const formatMySQLValue = (val) => {
+        if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/i.test(val)) {
+          const d = new Date(val);
+          if (!isNaN(d.getTime())) {
+            return d.toLocaleString('sv-SE', { timeZone: '+05:30' }).replace('T', ' ');
+          }
+        }
+        return val;
+      };
+
+      const sanitizeRowValues = (row) => {
+        if (!row || typeof row !== 'object') return row;
+        const cleaned = { ...row };
+        for (const [k, v] of Object.entries(cleaned)) {
+          cleaned[k] = formatMySQLValue(v);
+        }
+        return cleaned;
+      };
+
       // Helper to auto-create missing columns in MySQL or remove invalid keys
       const ensureColumns = async (dataPayload) => {
         if (!dataPayload) return dataPayload;
@@ -573,21 +593,21 @@ app.post('/api/query', async (req, res) => {
                 whereClauses.push(`t.\`${filter.column}\` IS NULL`);
               } else {
                 whereClauses.push(`t.\`${filter.column}\` = ?`);
-                params.push(filter.value);
+                params.push(formatMySQLValue(filter.value));
               }
             } else if (filter.type === 'gte') {
               whereClauses.push(`t.\`${filter.column}\` >= ?`);
-              params.push(filter.value);
+              params.push(formatMySQLValue(filter.value));
             } else if (filter.type === 'lt') {
               whereClauses.push(`t.\`${filter.column}\` < ?`);
-              params.push(filter.value);
+              params.push(formatMySQLValue(filter.value));
             } else if (filter.type === 'not') {
               // Handle "is null" negation
               if (filter.value === null || filter.value === 'null' || (typeof filter.value === 'string' && filter.value.toLowerCase() === 'is.null')) {
                 whereClauses.push(`t.\`${filter.column}\` IS NOT NULL`);
               } else {
                 whereClauses.push(`t.\`${filter.column}\` != ?`);
-                params.push(filter.value);
+                params.push(formatMySQLValue(filter.value));
               }
             } else if (filter.type === 'in') {
               if (Array.isArray(filter.value) && filter.value.length > 0) {
@@ -732,6 +752,7 @@ app.post('/api/query', async (req, res) => {
             row.id = uuidv4();
           }
           row = await processBase64FieldsAsync(row, row.id);
+          row = sanitizeRowValues(row);
 
           const columns = Object.keys(row).map(c => `\`${c}\``).join(', ');
           const placeholders = Object.keys(row).map(() => '?').join(', ');
@@ -755,6 +776,7 @@ app.post('/api/query', async (req, res) => {
         const pkColumn = table === 'app_settings' ? 'setting_key' : 'id';
         let updatedData = await processBase64FieldsAsync(data, table);
         updatedData = await ensureColumns(updatedData);
+        updatedData = sanitizeRowValues(updatedData);
 
         const updateKeys = Object.keys(updatedData).map(k => `\`${k}\` = ?`).join(', ');
         const updateValues = Object.values(updatedData);
@@ -771,7 +793,7 @@ app.post('/api/query', async (req, res) => {
           for (const filter of filters) {
             if (filter.type === 'eq') {
               whereClauses.push(`\`${filter.column}\` = ?`);
-              filterParams.push(filter.value);
+              filterParams.push(formatMySQLValue(filter.value));
             }
           }
         }
@@ -812,6 +834,7 @@ app.post('/api/query', async (req, res) => {
             row.id = uuidv4();
           }
           row = await processBase64FieldsAsync(row, row.id || row.setting_key);
+          row = sanitizeRowValues(row);
 
           const columns = Object.keys(row).map(c => `\`${c}\``).join(', ');
           const placeholders = Object.keys(row).map(() => '?').join(', ');

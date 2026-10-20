@@ -446,8 +446,7 @@ export default function EventRegistrationConfirmation() {
             status: action === 'accept' ? 'approved' : 'rejected',
             ...(paymentId && { payment_id: paymentId }),
             ...(paymentAmount && { payment_amount: paymentAmount }),
-            ...(action === 'accept' && { payment_status: paymentStatus }),
-            updated_at: new Date().toISOString()
+            ...(action === 'accept' && { payment_status: paymentStatus })
           })
           .eq('id', registration.id)
 
@@ -560,8 +559,7 @@ export default function EventRegistrationConfirmation() {
           company: editedMember.company,
           location: editedMember.location,
           area_of_expertise: editedMember.area_of_expertise,
-          profile_image: photoUrl,
-          updated_at: new Date().toISOString()
+          profile_image: photoUrl
         })
         .eq('id', member.id)
 

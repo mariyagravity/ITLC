@@ -33,6 +33,29 @@ function processRowImageUrls(row) {
   return cleaned;
 }
 
+function formatMySQLDate(val) {
+  if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/i.test(val)) {
+    const d = new Date(val);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleString('sv-SE', { timeZone: '+05:30' }).replace('T', ' ');
+    }
+  }
+  return val;
+}
+
+function sanitizeMySQLPayload(data) {
+  if (!data) return data;
+  if (Array.isArray(data)) return data.map(sanitizeMySQLPayload);
+  if (typeof data === 'object') {
+    const cleaned = { ...data };
+    for (const [key, val] of Object.entries(cleaned)) {
+      cleaned[key] = formatMySQLDate(val);
+    }
+    return cleaned;
+  }
+  return data;
+}
+
 class QueryBuilder {
   constructor(table) {
     this.table = table;
@@ -60,13 +83,13 @@ class QueryBuilder {
 
   insert(data) {
     this.action = 'insert';
-    this.payloadData = data;
+    this.payloadData = sanitizeMySQLPayload(data);
     return this;
   }
 
   update(data) {
     this.action = 'update';
-    this.payloadData = data;
+    this.payloadData = sanitizeMySQLPayload(data);
     return this;
   }
 
@@ -77,23 +100,23 @@ class QueryBuilder {
 
   upsert(data, options = {}) {
     this.action = 'upsert';
-    this.payloadData = data;
+    this.payloadData = sanitizeMySQLPayload(data);
     this.onConflict = options.onConflict;
     return this;
   }
 
   eq(column, value) {
-    this.filters.push({ type: 'eq', column, value });
+    this.filters.push({ type: 'eq', column, value: formatMySQLDate(value) });
     return this;
   }
 
   gte(column, value) {
-    this.filters.push({ type: 'gte', column, value });
+    this.filters.push({ type: 'gte', column, value: formatMySQLDate(value) });
     return this;
   }
 
   lt(column, value) {
-    this.filters.push({ type: 'lt', column, value });
+    this.filters.push({ type: 'lt', column, value: formatMySQLDate(value) });
     return this;
   }
 
