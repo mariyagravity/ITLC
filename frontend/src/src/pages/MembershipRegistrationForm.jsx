@@ -3,6 +3,7 @@ import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { memberService } from '../services/memberService'
 import { formatErrorMessage } from '../utils/errorHandler'
+import { validatePhone, normalizePhone } from '../utils/phoneUtils'
 import BottomNav from '../components/BottomNav'
 
 export default function MembershipRegistrationForm() {
@@ -106,28 +107,45 @@ export default function MembershipRegistrationForm() {
   const handleSubmit = async (e) => {
     e.preventDefault()
 
-    const cleanPhone = String(formData.phoneNumber || '').replace(/\D/g, '')
     if (!formData.profileImage) {
       showToast('Upload Profile Photo')
       return
     }
-    if (cleanPhone.length < 8 || cleanPhone.length > 15) {
-      showToast('Enter Valid Professional Phone Number')
+
+    const proPhoneCheck = validatePhone(formData.countryCode, formData.phoneNumber)
+    if (!proPhoneCheck.isValid) {
+      showToast(proPhoneCheck.message)
       return
     }
+
+    if (formData.personalPhoneNumber) {
+      const persPhoneCheck = validatePhone(formData.personalCountryCode, formData.personalPhoneNumber)
+      if (!persPhoneCheck.isValid) {
+        showToast(`Personal phone: ${persPhoneCheck.message}`)
+        return
+      }
+    }
+
     if (!formData.professionalEmail) {
       showToast('Enter Mandatory Professional/Work Email')
       return
     }
 
-    const proPhone = `${formData.countryCode}${formData.phoneNumber}`
-    const persPhone = formData.personalPhoneNumber ? `${formData.personalCountryCode}${formData.personalPhoneNumber}` : null
-    const proEmail = formData.professionalEmail
-    const persEmail = formData.personalEmail || null
+    const proPhone = normalizePhone(formData.countryCode, formData.phoneNumber)
+    const persPhone = formData.personalPhoneNumber ? normalizePhone(formData.personalCountryCode, formData.personalPhoneNumber) : null
+    const proEmail = formData.professionalEmail.trim().toLowerCase()
+    const persEmail = formData.personalEmail ? formData.personalEmail.trim().toLowerCase() : null
 
     setLoading(true)
 
     try {
+      const existing = (await memberService.checkExistingMember(proPhone)) || (await memberService.checkExistingMember(proEmail))
+      if (existing) {
+        showToast(`A profile already exists for "${existing.full_name}" with this phone or email. Please log in instead.`)
+        setLoading(false)
+        return
+      }
+
       const newMember = await memberService.registerMember({
         salutation: formData.salutation,
         full_name: formData.fullName,

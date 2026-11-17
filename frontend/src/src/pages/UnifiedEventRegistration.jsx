@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { formatErrorMessage } from '../utils/errorHandler'
+import { validatePhone, normalizePhone } from '../utils/phoneUtils'
 import BottomNav from '../components/BottomNav'
 
 export default function UnifiedEventRegistration() {
@@ -202,19 +203,43 @@ export default function UnifiedEventRegistration() {
   async function handleMemberSubmit(e) {
     e.preventDefault()
 
-    const cleanPhone = String(memberFormData.phoneNumber || '').replace(/\D/g, '')
     if (!memberFormData.profileImage) {
       showToast('Upload Profile Photo')
       return
     }
-    if (cleanPhone.length < 8 || cleanPhone.length > 15) {
-      showToast('Enter Valid Phone Number')
+
+    const phoneCheck = validatePhone(memberFormData.countryCode, memberFormData.phoneNumber)
+    if (!phoneCheck.isValid) {
+      showToast(phoneCheck.message)
       return
     }
+
+    if (!memberFormData.email) {
+      showToast('Work/Professional Email is required')
+      return
+    }
+
+    const proPhone = normalizePhone(memberFormData.countryCode, memberFormData.phoneNumber)
 
     setSubmitting(true)
 
     try {
+      // Pre-check for duplicate profile before payment or registration
+      const last10 = proPhone.slice(-10)
+      const cleanEmail = memberFormData.email.trim().toLowerCase()
+      const { data: existing } = await supabase
+        .from('members')
+        .select('id, full_name, email, phone_number')
+        .or(`phone_number.like.%${last10}%,personal_phone.like.%${last10}%,professional_phone.like.%${last10}%,email.eq.${cleanEmail}`)
+        .limit(1)
+        .maybeSingle()
+
+      if (existing) {
+        showToast(`A profile already exists for "${existing.full_name}" with this phone or email. Please verify your profile to register for the event.`)
+        setSubmitting(false)
+        return
+      }
+
       // Handle Razorpay payment if event has a fee
       let paymentId = null
       let paymentAmount = null
@@ -226,7 +251,7 @@ export default function UnifiedEventRegistration() {
             amount: event.fee,
             name: memberFormData.fullName,
             email: memberFormData.email,
-            contact: `${memberFormData.countryCode}${memberFormData.phoneNumber}`,
+            contact: proPhone,
             description: `Registration fee for ${event.title}`
           })
           paymentId = paymentResponse.razorpay_payment_id
@@ -246,8 +271,8 @@ export default function UnifiedEventRegistration() {
           {
             salutation: memberFormData.salutation,
             full_name: memberFormData.fullName,
-            phone_number: `${memberFormData.countryCode}${memberFormData.phoneNumber}`,
-            email: memberFormData.email,
+            phone_number: proPhone,
+            email: memberFormData.email.trim().toLowerCase(),
             designation: memberFormData.currentDesignation,
             company: memberFormData.currentCompany,
             industry_sector: memberFormData.industrySector,
@@ -302,10 +327,12 @@ export default function UnifiedEventRegistration() {
   async function handleGuestSubmit(e) {
     e.preventDefault()
 
-    const cleanPhone = String(guestFormData.phoneNumber || '').replace(/\D/g, '')
     if (!guestFormData.salutation) { showToast('Salutation is required'); return }
     if (!guestFormData.fullName.trim()) { showToast('Full Name is required'); return }
-    if (cleanPhone.length < 8 || cleanPhone.length > 15) { showToast('Enter Valid Phone Number'); return }
+    
+    const guestPhoneCheck = validatePhone(guestFormData.countryCode, guestFormData.phoneNumber)
+    if (!guestPhoneCheck.isValid) { showToast(guestPhoneCheck.message); return }
+
     if (!guestFormData.email.trim()) { showToast('Email is required'); return }
     if (!guestFormData.designation.trim()) { showToast('Designation is required'); return }
     if (!guestFormData.company.trim()) { showToast('Company Name is required'); return }
@@ -317,6 +344,8 @@ export default function UnifiedEventRegistration() {
     if (!guestFormData.yearsOfExperience) { showToast('Years of Experience is required'); return }
     if (!guestFormData.dateOfBirth) { showToast('Date of Birth is required'); return }
     if (!guestFormData.areaOfExpertise.trim()) { showToast('Area of Expertise is required'); return }
+
+    const guestPhone = normalizePhone(guestFormData.countryCode, guestFormData.phoneNumber)
 
     setSubmitting(true)
 
@@ -331,7 +360,7 @@ export default function UnifiedEventRegistration() {
             amount: event.fee,
             name: guestFormData.fullName,
             email: guestFormData.email,
-            contact: `${guestFormData.countryCode}${guestFormData.phoneNumber}`,
+            contact: guestPhone,
             description: `Registration fee for ${event.title}`
           })
           paymentId = paymentResponse.razorpay_payment_id
@@ -353,8 +382,8 @@ export default function UnifiedEventRegistration() {
             registration_type: 'non_member',
             guest_name: guestFormData.fullName,
             guest_designation: guestFormData.designation,
-            guest_email: guestFormData.email,
-            guest_phone: `${guestFormData.countryCode}${guestFormData.phoneNumber}`,
+            guest_email: guestFormData.email.trim().toLowerCase(),
+            guest_phone: guestPhone,
             guest_salutation: guestFormData.salutation,
             guest_company: guestFormData.company,
             guest_industry_sector: guestFormData.industrySector,
@@ -444,6 +473,22 @@ export default function UnifiedEventRegistration() {
                 </p>
               </div>
             </div>
+
+            {/* Link for Existing Members */}
+            <div
+              onClick={() => navigate(`/event-registration/${eventId}`)}
+              className="flex items-center justify-between p-3.5 mb-4 bg-primary/10 hover:bg-primary/20 border border-primary/30 rounded-xl cursor-pointer transition-all"
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="material-symbols-outlined text-primary text-xl">badge</span>
+                <div>
+                  <p className="text-primary font-bold text-xs">Already an ITLC Member?</p>
+                  <p className="text-slate-600 dark:text-slate-400 text-[11px]">Click here to verify using your Mobile Number or Email</p>
+                </div>
+              </div>
+              <span className="material-symbols-outlined text-primary text-base">arrow_forward</span>
+            </div>
+
             <h1 className="text-slate-900 dark:text-white text-xl font-bold leading-tight tracking-tight">
               How would you like to register for <span className="text-primary">{loading ? 'this event' : event?.title || 'this event'}</span>?
             </h1>

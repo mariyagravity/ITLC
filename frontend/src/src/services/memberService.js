@@ -18,6 +18,23 @@ export const memberService = {
     return data;
   },
 
+  async checkExistingMember(phoneOrEmail) {
+    if (!phoneOrEmail) return null;
+    const isEmail = typeof phoneOrEmail === 'string' && phoneOrEmail.includes('@');
+    let query = supabase.from('members').select('id, full_name, email, phone_number');
+    if (isEmail) {
+      const em = phoneOrEmail.trim().toLowerCase();
+      query = query.or(`email.eq.${em},professional_email.eq.${em},personal_email.eq.${em}`);
+    } else {
+      const clean = String(phoneOrEmail).replace(/\D/g, '');
+      if (clean.length < 10) return null;
+      const last10 = clean.slice(-10);
+      query = query.or(`phone_number.like.%${last10}%,personal_phone.like.%${last10}%,professional_phone.like.%${last10}%`);
+    }
+    const { data } = await query.limit(1).maybeSingle();
+    return data || null;
+  },
+
   async registerMember(payload) {
     const { data, error } = await supabase.from('members').insert([payload]).select();
     if (error) throw new Error(error.message || 'Failed to submit registration');

@@ -633,7 +633,7 @@ app.post('/api/query', async (req, res) => {
                   if (op === 'eq') {
                     conditions.push(`t.\`${col}\` = ?`);
                     params.push(val);
-                  } else if (op === 'ilike') {
+                  } else if (op === 'ilike' || op === 'like') {
                     conditions.push(`t.\`${col}\` LIKE ?`);
                     params.push(val);
                   } else if (op === 'is' && val === 'null') {
@@ -746,6 +746,57 @@ app.post('/api/query', async (req, res) => {
         const insertRows = Array.isArray(sanitizedData) ? sanitizedData : [sanitizedData];
         const insertedResults = [];
 
+        // Duplicate prevention and phone normalization for members table
+        if (table === 'members') {
+          for (const rawRow of insertRows) {
+            if (rawRow.phone_number) {
+              const digits = String(rawRow.phone_number).replace(/\D/g, '');
+              const isIndia = String(rawRow.phone_number).startsWith('+91') || digits.length === 10 || (digits.length === 12 && digits.startsWith('91'));
+              if (isIndia) {
+                const last10 = digits.slice(-10);
+                if (last10.length !== 10 || !/^[6-9]\d{9}$/.test(last10)) {
+                  return res.status(400).json({ 
+                    error: `Invalid Indian phone number (${rawRow.phone_number}). Mobile numbers must be exactly 10 digits starting with 6, 7, 8, or 9.` 
+                  });
+                }
+                rawRow.phone_number = `+91${last10}`;
+              }
+            }
+
+            if (rawRow.personal_phone) {
+              const pDigits = String(rawRow.personal_phone).replace(/\D/g, '');
+              if (pDigits.length >= 10) rawRow.personal_phone = `+91${pDigits.slice(-10)}`;
+            }
+            if (rawRow.professional_phone) {
+              const proDigits = String(rawRow.professional_phone).replace(/\D/g, '');
+              if (proDigits.length >= 10) rawRow.professional_phone = `+91${proDigits.slice(-10)}`;
+            }
+            if (rawRow.email) {
+              rawRow.email = rawRow.email.trim().toLowerCase();
+            }
+
+            const clean10 = rawRow.phone_number ? String(rawRow.phone_number).replace(/\D/g, '').slice(-10) : '';
+            const emailToCheck = rawRow.email ? rawRow.email.trim().toLowerCase() : '';
+
+            if (clean10 || emailToCheck) {
+              const [existingMembers] = await connection.query(`
+                SELECT id, full_name, email, phone_number 
+                FROM members 
+                WHERE (phone_number LIKE ? OR personal_phone LIKE ? OR professional_phone LIKE ?)
+                   OR (email IS NOT NULL AND email != '' AND LOWER(TRIM(email)) = ?)
+                LIMIT 1
+              `, [`%${clean10}%`, `%${clean10}%`, `%${clean10}%`, emailToCheck]);
+
+              if (existingMembers && existingMembers.length > 0) {
+                const existing = existingMembers[0];
+                return res.status(409).json({
+                  error: `A member profile already exists for "${existing.full_name}" with this phone number or email (${existing.phone_number || clean10}). Please verify your existing profile instead.`
+                });
+              }
+            }
+          }
+        }
+
         for (const rawRow of insertRows) {
           let row = { ...rawRow };
           if (!row.id) {
@@ -777,6 +828,24 @@ app.post('/api/query', async (req, res) => {
         let updatedData = await processBase64FieldsAsync(data, table);
         updatedData = await ensureColumns(updatedData);
         updatedData = sanitizeRowValues(updatedData);
+
+        if (table === 'members' && updatedData && typeof updatedData === 'object') {
+          if (updatedData.phone_number) {
+            const digits = String(updatedData.phone_number).replace(/\D/g, '');
+            if (digits.length >= 10) updatedData.phone_number = `+91${digits.slice(-10)}`;
+          }
+          if (updatedData.personal_phone) {
+            const digits = String(updatedData.personal_phone).replace(/\D/g, '');
+            if (digits.length >= 10) updatedData.personal_phone = `+91${digits.slice(-10)}`;
+          }
+          if (updatedData.professional_phone) {
+            const digits = String(updatedData.professional_phone).replace(/\D/g, '');
+            if (digits.length >= 10) updatedData.professional_phone = `+91${digits.slice(-10)}`;
+          }
+          if (updatedData.email) {
+            updatedData.email = updatedData.email.trim().toLowerCase();
+          }
+        }
 
         const updateKeys = Object.keys(updatedData).map(k => `\`${k}\` = ?`).join(', ');
         const updateValues = Object.values(updatedData);

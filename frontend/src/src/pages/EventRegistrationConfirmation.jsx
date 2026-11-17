@@ -178,21 +178,41 @@ export default function EventRegistrationConfirmation() {
 
   async function handleVerifyPhone(e) {
     e.preventDefault()
-    const cleanPhone = phoneNumber.replace(/\D/g, '')
-    if (cleanPhone.length < 8 || cleanPhone.length > 15) {
-      showToast('Enter Valid Phone Number')
+    const inputVal = phoneNumber.trim()
+    if (!inputVal) {
+      showToast('Enter Phone Number or Email')
       return
     }
+
+    const isEmail = inputVal.includes('@')
+    const cleanPhone = inputVal.replace(/\D/g, '')
+
+    if (isEmail) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inputVal)) {
+        showToast('Enter Valid Email Address')
+        return
+      }
+    } else {
+      if (cleanPhone.length < 10) {
+        showToast('Enter Valid 10-digit Phone Number')
+        return
+      }
+    }
+
     setPhoneLoading(true)
     setError(null)
 
     try {
-      const { data, error: fetchError } = await supabase
-        .from('members')
-        .select('*')
-        .or(`phone_number.eq.${phoneNumber},phone_number.eq.${cleanPhone},phone_number.eq.+91${cleanPhone}`)
-        .limit(1)
-        .maybeSingle()
+      let query = supabase.from('members').select('*')
+      if (isEmail) {
+        const lowerEmail = inputVal.toLowerCase()
+        query = query.or(`email.eq.${lowerEmail},professional_email.eq.${lowerEmail},personal_email.eq.${lowerEmail}`)
+      } else {
+        const last10 = cleanPhone.slice(-10)
+        query = query.or(`phone_number.like.%${last10}%,personal_phone.like.%${last10}%,professional_phone.like.%${last10}%`)
+      }
+
+      const { data, error: fetchError } = await query.limit(1).maybeSingle()
 
       if (fetchError && fetchError.code !== 'PGRST116') {
         throw fetchError
@@ -201,7 +221,7 @@ export default function EventRegistrationConfirmation() {
       if (data) {
         // Member found
         setMember(data)
-        
+
         // Check if member has a PIN set
         if (data.login_pin) {
           // PIN required - move to PIN verification step
@@ -221,13 +241,14 @@ export default function EventRegistrationConfirmation() {
           setStep('confirm')
         }
       } else {
-        // Member not found - redirect to unified registration choice page with phone prefilled
-        navigate(`/unified-event-registration/${eventId}?phone=${encodeURIComponent(phoneNumber)}`)
+        // Member not found - redirect to unified registration choice page
+        const paramKey = isEmail ? 'email' : 'phone'
+        navigate(`/unified-event-registration/${eventId}?${paramKey}=${encodeURIComponent(inputVal)}`)
       }
     } catch (err) {
-      console.error('Error verifying phone:', err)
-      setError('Unable to verify phone number. Please try again.')
-      showToast('Unable to verify phone number. Please try again.')
+      console.error('Error verifying member:', err)
+      setError('Unable to verify membership details. Please try again.')
+      showToast('Unable to verify membership details. Please try again.')
     } finally {
       setPhoneLoading(false)
     }
@@ -235,7 +256,7 @@ export default function EventRegistrationConfirmation() {
 
   async function handleVerifyPin(e) {
     e.preventDefault()
-    
+
     if (!pin || pin.length !== 4) {
       setError('PIN must be exactly 4 digits')
       return
@@ -483,7 +504,7 @@ export default function EventRegistrationConfirmation() {
 
   const formatDate = (dateString) => {
     const date = new Date(dateString)
-    return date.toLocaleDateString('en-US', { 
+    return date.toLocaleDateString('en-US', {
       weekday: 'long',
       year: 'numeric',
       month: 'long',
@@ -618,11 +639,10 @@ export default function EventRegistrationConfirmation() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 py-8 px-4 flex items-center justify-center">
         {toast.show && (
-          <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-lg shadow-lg text-sm font-semibold ${
-            toast.type === 'success' 
-              ? 'bg-green-600 text-white' 
+          <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-lg shadow-lg text-sm font-semibold ${toast.type === 'success'
+              ? 'bg-green-600 text-white'
               : 'bg-red-600 text-white'
-          }`}>
+            }`}>
             {toast.message}
           </div>
         )}
@@ -641,17 +661,17 @@ export default function EventRegistrationConfirmation() {
               </p>
             </div>
 
-            {/* Phone Verification Form */}
+            {/* Member Verification Form */}
             <form onSubmit={handleVerifyPhone} className="space-y-4">
               <div className="flex flex-col gap-2">
                 <label className="text-slate-900 dark:text-slate-100 text-sm font-semibold">
-                  Phone Number <span className="text-red-500">*</span>
+                  Mobile Number or Registered Email <span className="text-red-500">*</span>
                 </label>
                 <input
-                  type="tel"
+                  type="text"
                   value={phoneNumber}
                   onChange={(e) => setPhoneNumber(e.target.value)}
-                  placeholder="Enter your phone number"
+                  placeholder="Enter 10-digit mobile number or email"
                   className="w-full px-4 py-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 text-slate-900 dark:text-white focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all outline-none"
                   required
                 />
@@ -830,11 +850,10 @@ export default function EventRegistrationConfirmation() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 py-8 px-4">
         {toast.show && (
-          <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-lg shadow-lg text-sm font-semibold ${
-            toast.type === 'success' 
-              ? 'bg-green-600 text-white' 
+          <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-lg shadow-lg text-sm font-semibold ${toast.type === 'success'
+              ? 'bg-green-600 text-white'
               : 'bg-red-600 text-white'
-          }`}>
+            }`}>
             {toast.message}
           </div>
         )}

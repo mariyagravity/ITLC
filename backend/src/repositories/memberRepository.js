@@ -6,14 +6,28 @@ export const memberRepository = {
     return rows[0] || null;
   },
 
-  async findApprovedByPhone(phone) {
-    const cleanPhone = String(phone).replace(/\D/g, '');
+  async findApprovedByPhone(phoneOrEmail) {
+    const isEmail = typeof phoneOrEmail === 'string' && phoneOrEmail.includes('@');
+    if (isEmail) {
+      const emailTrim = phoneOrEmail.trim().toLowerCase();
+      const [rows] = await pool.query(
+        `SELECT id, email, full_name, phone_number, login_pin, company, designation
+         FROM members 
+         WHERE (LOWER(TRIM(email)) = ? OR LOWER(TRIM(professional_email)) = ? OR LOWER(TRIM(personal_email)) = ?) AND status = 'approved' 
+         LIMIT 1`,
+        [emailTrim, emailTrim, emailTrim]
+      );
+      return rows[0] || null;
+    }
+
+    const cleanPhone = String(phoneOrEmail).replace(/\D/g, '');
+    const last10 = cleanPhone.slice(-10);
     const [rows] = await pool.query(
       `SELECT id, email, full_name, phone_number, login_pin, company, designation
        FROM members 
-       WHERE (phone_number = ? OR phone_number = ? OR phone_number = ?) AND status = 'approved' 
+       WHERE (phone_number LIKE ? OR personal_phone LIKE ? OR professional_phone LIKE ?) AND status = 'approved' 
        LIMIT 1`,
-      [phone, cleanPhone, `+91${cleanPhone}`]
+      [`%${last10}%`, `%${last10}%`, `%${last10}%`]
     );
     return rows[0] || null;
   },
@@ -42,15 +56,31 @@ export const memberRepository = {
     return result.affectedRows > 0;
   },
 
-  async verifyMemberLogin(phone, pin) {
-    const cleanPhone = String(phone).replace(/\D/g, '');
-    const [rows] = await pool.query(
-      `SELECT id, email, full_name, phone_number, designation, company, itlc_chapter_name, profile_image, membership_tier, status, login_pin
-       FROM members 
-       WHERE (phone_number = ? OR phone_number = ? OR phone_number = ?) AND status = 'approved'
-       LIMIT 1`,
-      [phone, cleanPhone, `+91${cleanPhone}`]
-    );
+  async verifyMemberLogin(phoneOrEmail, pin) {
+    const isEmail = typeof phoneOrEmail === 'string' && phoneOrEmail.includes('@');
+    let rows;
+    if (isEmail) {
+      const emailTrim = phoneOrEmail.trim().toLowerCase();
+      const [r] = await pool.query(
+        `SELECT id, email, full_name, phone_number, designation, company, itlc_chapter_name, profile_image, membership_tier, status, login_pin
+         FROM members 
+         WHERE (LOWER(TRIM(email)) = ? OR LOWER(TRIM(professional_email)) = ? OR LOWER(TRIM(personal_email)) = ?) AND status = 'approved'
+         LIMIT 1`,
+        [emailTrim, emailTrim, emailTrim]
+      );
+      rows = r;
+    } else {
+      const cleanPhone = String(phoneOrEmail).replace(/\D/g, '');
+      const last10 = cleanPhone.slice(-10);
+      const [r] = await pool.query(
+        `SELECT id, email, full_name, phone_number, designation, company, itlc_chapter_name, profile_image, membership_tier, status, login_pin
+         FROM members 
+         WHERE (phone_number LIKE ? OR personal_phone LIKE ? OR professional_phone LIKE ?) AND status = 'approved'
+         LIMIT 1`,
+        [`%${last10}%`, `%${last10}%`, `%${last10}%`]
+      );
+      rows = r;
+    }
     const member = rows[0] || null;
     if (!member) return { success: false, reason: 'not_found' };
     if (!member.login_pin) return { success: false, reason: 'no_pin_set', member };
