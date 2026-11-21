@@ -73,6 +73,9 @@ CREATE TABLE IF NOT EXISTS events (
     auto_share BOOLEAN DEFAULT TRUE,
     status VARCHAR(50) DEFAULT 'upcoming', -- 'upcoming', 'past', 'cancelled'
     image LONGTEXT NULL, -- Holds base64 data url or public file path
+    poster_template LONGTEXT NULL,
+    poster_hotspot LONGTEXT NULL,
+    linkedin_description TEXT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     KEY idx_event_status (status)

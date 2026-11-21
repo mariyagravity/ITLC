@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import BottomNav from '../components/BottomNav'
 import { supabase } from '../lib/supabase'
 import { eventService } from '../services/eventService'
@@ -18,6 +18,22 @@ export default function Settings() {
   const [linkedinDescription, setLinkedinDescription] = useState('')
   const [savingDesc, setSavingDesc] = useState(false)
   const [descSaved, setDescSaved] = useState(false)
+
+  // Hotspot Area Management States
+  const [hotspot, setHotspot] = useState(null)
+  const [savingHotspot, setSavingHotspot] = useState(false)
+  const [hotspotSaved, setHotspotSaved] = useState(false)
+  const [hotspotAlign, setHotspotAlign] = useState('left')
+  const [hotspotColor, setHotspotColor] = useState('#FFFFFF')
+  const [hotspotNameSize, setHotspotNameSize] = useState(200)
+  const [hotspotDesigSize, setHotspotDesigSize] = useState(162)
+  const [hotspotCompSize, setHotspotCompSize] = useState(150)
+  const [showHotspotEditor, setShowHotspotEditor] = useState(true)
+
+  const hotspotContainerRef = useRef(null)
+  const hotspotImgRef = useRef(null)
+  const dragAction = useRef(null)
+  const dragStart = useRef({ mouseX: 0, mouseY: 0, boxX: 0, boxY: 0, boxW: 0, boxH: 0, startX: 0, startY: 0 })
 
   useEffect(() => {
     // Load saved settings from localStorage first
@@ -69,6 +85,7 @@ export default function Settings() {
       setSelectedEvent(null)
       setPosterPreview('')
       setLinkedinDescription('')
+      setHotspot(null)
       return
     }
     const evt = eventsList.find((e) => String(e.id) === String(selectedEventId))
@@ -78,8 +95,291 @@ export default function Settings() {
       const cached = localStorage.getItem(`event_linkedin_desc_${evt.id}`)
       const existingDesc = evt.linkedin_description || evt.poster_description || cached
       setLinkedinDescription(existingDesc || getDefaultDescriptionForEvent(evt))
+
+      // Load poster hotspot
+      const cachedHotspot = localStorage.getItem(`event_poster_hotspot_${evt.id}`)
+      const rawHotspot = evt.poster_hotspot || cachedHotspot
+      if (rawHotspot) {
+        try {
+          const parsed = typeof rawHotspot === 'string' ? JSON.parse(rawHotspot) : rawHotspot
+          setHotspot(parsed)
+          if (parsed.textAlign) setHotspotAlign(parsed.textAlign)
+          if (parsed.textColor) setHotspotColor(parsed.textColor)
+          if (parsed.nameFontSize) setHotspotNameSize(parsed.nameFontSize)
+          if (parsed.desigFontSize) setHotspotDesigSize(parsed.desigFontSize)
+          if (parsed.compFontSize) setHotspotCompSize(parsed.compFontSize)
+        } catch (e) {
+          console.error('Error parsing event hotspot:', e)
+          setDefaultHotspot()
+        }
+      } else {
+        setDefaultHotspot()
+      }
     }
   }, [selectedEventId, eventsList])
+
+  const setDefaultHotspot = () => {
+    setHotspot({
+      ratioX: 0.08,
+      ratioY: 0.72,
+      ratioW: 0.84,
+      ratioH: 0.22,
+      x: 86,
+      y: 778,
+      width: 907,
+      height: 238,
+      textAlign: 'left',
+      textColor: '#FFFFFF',
+      nameFontSize: 200,
+      desigFontSize: 162,
+      compFontSize: 150
+    })
+    setHotspotAlign('left')
+    setHotspotColor('#FFFFFF')
+    setHotspotNameSize(200)
+    setHotspotDesigSize(162)
+    setHotspotCompSize(150)
+  }
+
+  // Handle Box Drag (Move)
+  const handleBoxMouseDown = (e) => {
+    e.stopPropagation()
+    if (e.button !== undefined && e.button !== 0) return
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY
+    dragAction.current = 'move'
+    dragStart.current = {
+      mouseX: clientX,
+      mouseY: clientY,
+      boxX: hotspot?.ratioX ?? 0.08,
+      boxY: hotspot?.ratioY ?? 0.72,
+      boxW: hotspot?.ratioW ?? 0.84,
+      boxH: hotspot?.ratioH ?? 0.22
+    }
+  }
+
+  // Handle Resize Corner
+  const handleResizeMouseDown = (e) => {
+    e.stopPropagation()
+    if (e.button !== undefined && e.button !== 0) return
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY
+    dragAction.current = 'resize'
+    dragStart.current = {
+      mouseX: clientX,
+      mouseY: clientY,
+      boxX: hotspot?.ratioX ?? 0.08,
+      boxY: hotspot?.ratioY ?? 0.72,
+      boxW: hotspot?.ratioW ?? 0.84,
+      boxH: hotspot?.ratioH ?? 0.22
+    }
+  }
+
+  // Handle Container Mouse Down (Draw new area)
+  const handleContainerMouseDown = (e) => {
+    if (e.button !== undefined && e.button !== 0) return
+    if (!hotspotContainerRef.current) return
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY
+    const rect = hotspotContainerRef.current.getBoundingClientRect()
+    if (rect.width <= 0 || rect.height <= 0) return
+
+    const startX = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
+    const startY = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height))
+
+    dragAction.current = 'draw'
+    dragStart.current = {
+      mouseX: clientX,
+      mouseY: clientY,
+      startX,
+      startY
+    }
+  }
+
+  // Mouse / Touch Move & End event listener
+  useEffect(() => {
+    const handleMove = (e) => {
+      if (!dragAction.current || !hotspotContainerRef.current) return
+      if (e.cancelable && (e.type === 'touchmove' || e.type === 'mousemove')) {
+        e.preventDefault()
+      }
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY
+      const rect = hotspotContainerRef.current.getBoundingClientRect()
+      if (rect.width <= 0 || rect.height <= 0) return
+
+      const naturalW = hotspotImgRef.current?.naturalWidth || 1080
+      const naturalH = hotspotImgRef.current?.naturalHeight || 1080
+
+      if (dragAction.current === 'move') {
+        const dx = (clientX - dragStart.current.mouseX) / rect.width
+        const dy = (clientY - dragStart.current.mouseY) / rect.height
+        const maxW = dragStart.current.boxW
+        const maxH = dragStart.current.boxH
+        const newX = Math.max(0, Math.min(1 - maxW, dragStart.current.boxX + dx))
+        const newY = Math.max(0, Math.min(1 - maxH, dragStart.current.boxY + dy))
+
+        setHotspot((prev) => ({
+          ...prev,
+          ratioX: Number(newX.toFixed(4)),
+          ratioY: Number(newY.toFixed(4)),
+          ratioW: Number(maxW.toFixed(4)),
+          ratioH: Number(maxH.toFixed(4)),
+          x: Math.round(newX * naturalW),
+          y: Math.round(newY * naturalH),
+          width: Math.round(maxW * naturalW),
+          height: Math.round(maxH * naturalH)
+        }))
+      } else if (dragAction.current === 'resize') {
+        const dw = (clientX - dragStart.current.mouseX) / rect.width
+        const dh = (clientY - dragStart.current.mouseY) / rect.height
+        const curX = dragStart.current.boxX
+        const curY = dragStart.current.boxY
+        const newW = Math.max(0.12, Math.min(1 - curX, dragStart.current.boxW + dw))
+        const newH = Math.max(0.06, Math.min(1 - curY, dragStart.current.boxH + dh))
+
+        setHotspot((prev) => ({
+          ...prev,
+          ratioW: Number(newW.toFixed(4)),
+          ratioH: Number(newH.toFixed(4)),
+          x: Math.round(curX * naturalW),
+          y: Math.round(curY * naturalH),
+          width: Math.round(newW * naturalW),
+          height: Math.round(newH * naturalH)
+        }))
+      } else if (dragAction.current === 'draw') {
+        const curX = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
+        const curY = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height))
+        const startX = dragStart.current.startX
+        const startY = dragStart.current.startY
+
+        const minX = Math.min(startX, curX)
+        const minY = Math.min(startY, curY)
+        const w = Math.max(0.08, Math.abs(curX - startX))
+        const h = Math.max(0.05, Math.abs(curY - startY))
+
+        setHotspot((prev) => ({
+          ...prev,
+          ratioX: Number(minX.toFixed(4)),
+          ratioY: Number(minY.toFixed(4)),
+          ratioW: Number(w.toFixed(4)),
+          ratioH: Number(h.toFixed(4)),
+          x: Math.round(minX * naturalW),
+          y: Math.round(minY * naturalH),
+          width: Math.round(w * naturalW),
+          height: Math.round(h * naturalH),
+          textAlign: hotspotAlign,
+          textColor: hotspotColor,
+          nameFontSize: hotspotNameSize,
+          desigFontSize: hotspotDesigSize,
+          compFontSize: hotspotCompSize
+        }))
+      }
+    }
+
+    const handleUp = () => {
+      dragAction.current = null
+    }
+
+    window.addEventListener('mousemove', handleMove)
+    window.addEventListener('mouseup', handleUp)
+    window.addEventListener('touchmove', handleMove, { passive: false })
+    window.addEventListener('touchend', handleUp)
+    window.addEventListener('touchcancel', handleUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMove)
+      window.removeEventListener('mouseup', handleUp)
+      window.removeEventListener('touchmove', handleMove)
+      window.removeEventListener('touchend', handleUp)
+      window.removeEventListener('touchcancel', handleUp)
+    }
+  }, [hotspotAlign, hotspotColor, hotspotNameSize, hotspotDesigSize, hotspotCompSize])
+
+  const applyPreset = (presetName) => {
+    const naturalW = hotspotImgRef.current?.naturalWidth || 1080
+    const naturalH = hotspotImgRef.current?.naturalHeight || 1080
+    let p = { ratioX: 0.08, ratioY: 0.72, ratioW: 0.84, ratioH: 0.22, textAlign: 'left' }
+    if (presetName === 'bottom-center') {
+      p = { ratioX: 0.1, ratioY: 0.72, ratioW: 0.8, ratioH: 0.22, textAlign: 'center' }
+    } else if (presetName === 'bottom-left') {
+      p = { ratioX: 0.06, ratioY: 0.72, ratioW: 0.55, ratioH: 0.22, textAlign: 'left' }
+    } else if (presetName === 'bottom-right') {
+      p = { ratioX: 0.42, ratioY: 0.72, ratioW: 0.52, ratioH: 0.22, textAlign: 'right' }
+    } else if (presetName === 'center') {
+      p = { ratioX: 0.15, ratioY: 0.55, ratioW: 0.7, ratioH: 0.24, textAlign: 'center' }
+    }
+    const updated = {
+      ...hotspot,
+      ...p,
+      x: Math.round(p.ratioX * naturalW),
+      y: Math.round(p.ratioY * naturalH),
+      width: Math.round(p.ratioW * naturalW),
+      height: Math.round(p.ratioH * naturalH),
+      textAlign: p.textAlign,
+      textColor: hotspotColor,
+      nameFontSize: hotspotNameSize,
+      desigFontSize: hotspotDesigSize,
+      compFontSize: hotspotCompSize
+    }
+    setHotspot(updated)
+    setHotspotAlign(p.textAlign)
+  }
+
+  const handleSaveHotspot = async () => {
+    if (!selectedEventId || !hotspot) return
+    setSavingHotspot(true)
+    try {
+      const naturalW = hotspotImgRef.current?.naturalWidth || 1080
+      const naturalH = hotspotImgRef.current?.naturalHeight || 1080
+
+      const fullHotspot = {
+        ...hotspot,
+        ratioX: hotspot.ratioX ?? Number(((hotspot.x || 0) / naturalW).toFixed(4)),
+        ratioY: hotspot.ratioY ?? Number(((hotspot.y || 0) / naturalH).toFixed(4)),
+        ratioW: hotspot.ratioW ?? Number(((hotspot.width || 400) / naturalW).toFixed(4)),
+        ratioH: hotspot.ratioH ?? Number(((hotspot.height || 200) / naturalH).toFixed(4)),
+        x: hotspot.x ?? Math.round((hotspot.ratioX || 0) * naturalW),
+        y: hotspot.y ?? Math.round((hotspot.ratioY || 0) * naturalH),
+        width: hotspot.width ?? Math.round((hotspot.ratioW || 0.5) * naturalW),
+        height: hotspot.height ?? Math.round((hotspot.ratioH || 0.2) * naturalH),
+        textAlign: hotspotAlign,
+        textColor: hotspotColor,
+        nameFontSize: Number(hotspotNameSize) || 48,
+        desigFontSize: Number(hotspotDesigSize) || 36,
+        compFontSize: Number(hotspotCompSize) || 30
+      }
+
+      const hotspotJson = JSON.stringify(fullHotspot)
+      localStorage.setItem(`event_poster_hotspot_${selectedEventId}`, hotspotJson)
+
+      setEventsList((prev) =>
+        prev.map((ev) =>
+          String(ev.id) === String(selectedEventId)
+            ? { ...ev, poster_hotspot: hotspotJson }
+            : ev
+        )
+      )
+
+      const { error } = await supabase
+        .from('events')
+        .update({ poster_hotspot: hotspotJson })
+        .eq('id', selectedEventId)
+
+      if (error) {
+        console.error('Supabase error saving poster_hotspot:', error)
+      }
+
+      setHotspot(fullHotspot)
+      setHotspotSaved(true)
+      setTimeout(() => setHotspotSaved(false), 2500)
+    } catch (err) {
+      console.error('Error saving poster hotspot:', err)
+      setHotspotSaved(true)
+      setTimeout(() => setHotspotSaved(false), 2500)
+    } finally {
+      setSavingHotspot(false)
+    }
+  }
 
   const handleSaveLinkedinDescription = async () => {
     if (!selectedEventId) return
@@ -344,7 +644,7 @@ export default function Settings() {
                   <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Upload your organization logo</p>
                 </div>
               </div>
-              
+
               {customLogo && (
                 <div className="mb-4 flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700">
                   <img src={customLogo} alt="Custom Logo" className="h-12 w-12 object-contain rounded" />
@@ -431,6 +731,209 @@ export default function Settings() {
                       <span>{posterPreview ? 'Change Poster PNG Template' : 'Upload Poster PNG Template'}</span>
                     </div>
                   </label>
+
+                  {/* Interactive Attendee Details Hotspot Area Marker */}
+                  {posterPreview && (
+                    <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-700">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-indigo-500 text-base">center_focus_strong</span>
+                            <span>Attendee Name & Designation Hotspot Area</span>
+                          </label>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                            Drag to reposition or drag the bottom-right corner to resize. Delegates' Name, Designation & Company will appear here by default.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowHotspotEditor(!showHotspotEditor)}
+                          className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold hover:underline flex items-center gap-1"
+                        >
+                          <span>{showHotspotEditor ? 'Hide Workspace' : 'Open Workspace'}</span>
+                          <span className="material-symbols-outlined text-sm">{showHotspotEditor ? 'expand_less' : 'expand_more'}</span>
+                        </button>
+                      </div>
+
+                      {showHotspotEditor && (
+                        <div className="space-y-3 bg-slate-50 dark:bg-slate-900/60 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700">
+                          {/* Quick Position Presets */}
+                          <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mr-1">Quick Presets:</span>
+                            <button
+                              type="button"
+                              onClick={() => applyPreset('bottom-left')}
+                              className={`px-2.5 py-1 rounded text-[11px] font-medium transition-all ${hotspotAlign === 'left' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                                }`}
+                            >
+                              Bottom Left
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => applyPreset('bottom-center')}
+                              className={`px-2.5 py-1 rounded text-[11px] font-medium transition-all ${hotspotAlign === 'center' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                                }`}
+                            >
+                              Bottom Center
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => applyPreset('bottom-right')}
+                              className={`px-2.5 py-1 rounded text-[11px] font-medium transition-all ${hotspotAlign === 'right' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                                }`}
+                            >
+                              Bottom Right
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => applyPreset('center')}
+                              className="px-2.5 py-1 rounded text-[11px] font-medium bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 transition-all"
+                            >
+                              Center Card
+                            </button>
+                          </div>
+
+                          {/* Interactive Workspace Canvas */}
+                          <div className="flex justify-center p-2 bg-slate-900/90 rounded-xl overflow-hidden shadow-inner border border-slate-800">
+                            <div
+                              ref={hotspotContainerRef}
+                              onMouseDown={handleContainerMouseDown}
+                              onTouchStart={handleContainerMouseDown}
+                              className="relative select-none max-w-full overflow-hidden cursor-crosshair inline-block shadow-2xl rounded-md"
+                              style={{ touchAction: 'none' }}
+                            >
+                              <img
+                                ref={hotspotImgRef}
+                                src={posterPreview}
+                                alt="Poster Template"
+                                className="max-h-[380px] w-auto max-w-full block pointer-events-none select-none rounded-md"
+                              />
+
+                              {/* Hotspot Box */}
+                              {hotspot && (
+                                <div
+                                  onMouseDown={handleBoxMouseDown}
+                                  onTouchStart={handleBoxMouseDown}
+                                  style={{
+                                    left: `${(hotspot.ratioX ?? 0.08) * 100}%`,
+                                    top: `${(hotspot.ratioY ?? 0.72) * 100}%`,
+                                    width: `${(hotspot.ratioW ?? 0.84) * 100}%`,
+                                    height: `${(hotspot.ratioH ?? 0.22) * 100}%`
+                                  }}
+                                  className="absolute border-2 border-indigo-400 bg-indigo-500/25 backdrop-blur-[2px] rounded-lg cursor-grab active:cursor-grabbing flex flex-col justify-center px-3 py-1.5 shadow-xl select-none group"
+                                >
+                                  {/* Hotspot Badge */}
+                                  <div className="absolute -top-3 left-2 bg-indigo-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow flex items-center gap-1 pointer-events-none">
+                                    <span className="material-symbols-outlined text-[11px]">drag_pan</span>
+                                    <span>Hotspot Area (Drag to move)</span>
+                                  </div>
+
+                                  {/* Dummy Attendee Text Preview */}
+                                  <div
+                                    style={{ textAlign: hotspotAlign, color: hotspotColor }}
+                                    className="space-y-0.5 pointer-events-none w-full"
+                                  >
+                                    <div className="font-extrabold text-xs sm:text-sm leading-tight drop-shadow truncate">
+                                      Attendee Name
+                                    </div>
+                                    <div className="text-[10px] sm:text-xs font-semibold opacity-90 leading-tight drop-shadow truncate">
+                                      Designation / Title
+                                    </div>
+                                    <div className="text-[9px] sm:text-[11px] font-normal opacity-80 leading-tight drop-shadow truncate">
+                                      Company / Organization
+                                    </div>
+                                  </div>
+
+                                  {/* Corner Resize Handle */}
+                                  <div
+                                    onMouseDown={handleResizeMouseDown}
+                                    onTouchStart={handleResizeMouseDown}
+                                    title="Drag to resize hotspot area"
+                                    className="absolute -bottom-2 -right-2 size-5 bg-indigo-600 hover:bg-indigo-700 border-2 border-white rounded-md cursor-se-resize shadow-md flex items-center justify-center text-white"
+                                  >
+                                    <span className="material-symbols-outlined text-[10px]">crop_free</span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Hotspot Fine-Tuning Controls */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                            {/* Text Alignment */}
+                            <div className="space-y-1.5">
+                              <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block">Text Alignment</span>
+                              <div className="flex items-center gap-1">
+                                {[
+                                  { id: 'left', label: 'Left', icon: 'format_align_left' },
+                                  { id: 'center', label: 'Center', icon: 'format_align_center' },
+                                  { id: 'right', label: 'Right', icon: 'format_align_right' }
+                                ].map((al) => (
+                                  <button
+                                    key={al.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setHotspotAlign(al.id)
+                                      setHotspot((prev) => ({ ...prev, textAlign: al.id }))
+                                    }}
+                                    className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-all ${hotspotAlign === al.id
+                                        ? 'bg-indigo-600 text-white shadow-sm'
+                                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                                      }`}
+                                  >
+                                    <span className="material-symbols-outlined text-sm">{al.icon}</span>
+                                    <span>{al.label}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Default Text Color */}
+                            <div className="space-y-1.5">
+                              <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block">Default Text Color</span>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="color"
+                                  value={hotspotColor}
+                                  onChange={(e) => {
+                                    setHotspotColor(e.target.value)
+                                    setHotspot((prev) => ({ ...prev, textColor: e.target.value }))
+                                  }}
+                                  className="w-8 h-8 rounded-lg cursor-pointer border border-slate-200 dark:border-slate-700 p-0.5 bg-white dark:bg-slate-800"
+                                />
+                                <div className="flex items-center gap-1 flex-1">
+                                  {['#FFFFFF', '#0F172A', '#F59E0B', '#38BDF8', '#4ADE80'].map((c) => (
+                                    <button
+                                      key={c}
+                                      type="button"
+                                      onClick={() => {
+                                        setHotspotColor(c)
+                                        setHotspot((prev) => ({ ...prev, textColor: c }))
+                                      }}
+                                      style={{ backgroundColor: c }}
+                                      className={`size-6 rounded-md border ${hotspotColor === c ? 'ring-2 ring-indigo-500 scale-110' : 'border-slate-300 dark:border-slate-600'
+                                        }`}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Save Hotspot Button */}
+                          <button
+                            type="button"
+                            onClick={handleSaveHotspot}
+                            disabled={savingHotspot}
+                            className="w-full py-2.5 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                          >
+                            <span className="material-symbols-outlined text-sm">{hotspotSaved ? 'check' : 'save'}</span>
+                            <span>{savingHotspot ? 'Saving Hotspot Area...' : hotspotSaved ? 'Hotspot Area Saved Successfully!' : 'Save Hotspot Area'}</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Event LinkedIn Description Template */}
                   <div className="space-y-2 pt-3 border-t border-slate-100 dark:border-slate-700">
@@ -521,11 +1024,10 @@ export default function Settings() {
                   <button
                     key={item.color}
                     onClick={() => handleColorChange(item.color)}
-                    className={`aspect-square rounded-xl border-4 transition-all hover:scale-110 ${
-                      primaryColor === item.color 
-                        ? 'border-slate-900 dark:border-white scale-110' 
+                    className={`aspect-square rounded-xl border-4 transition-all hover:scale-110 ${primaryColor === item.color
+                        ? 'border-slate-900 dark:border-white scale-110'
                         : 'border-slate-200 dark:border-slate-700'
-                    }`}
+                      }`}
                     style={{ backgroundColor: item.color }}
                     title={item.name}
                   />

@@ -18,20 +18,20 @@ export default function EventAttendingPoster() {
 
   // Position and font states for name
   const [textPos, setTextPos] = useState({ x: 100, y: 850 })
-  const [textFontSize, setTextFontSize] = useState(50)
+  const [textFontSize, setTextFontSize] = useState(200)
   const [textColor, setTextColor] = useState('#FFFFFF')
   const [postDescription, setPostDescription] = useState('')
 
   // Designation field states
   const [userDesignation, setUserDesignation] = useState('')
-  const [desigPos, setDesigPos] = useState({ x: 100, y: 980 })
-  const [desigFontSize, setDesigFontSize] = useState(50)
+  const [desigPos, setDesigPos] = useState({ x: 100, y: 1080 })
+  const [desigFontSize, setDesigFontSize] = useState(162)
   const [desigColor, setDesigColor] = useState('#FFFFFF')
 
   // Company field states
   const [userCompany, setUserCompany] = useState('')
-  const [compPos, setCompPos] = useState({ x: 100, y: 1050 })
-  const [compFontSize, setCompFontSize] = useState(45)
+  const [compPos, setCompPos] = useState({ x: 100, y: 1270 })
+  const [compFontSize, setCompFontSize] = useState(150)
   const [compColor, setCompColor] = useState('#FFFFFF')
 
   const [imgPos, setImgPos] = useState({ x: 0, y: 0 })
@@ -74,6 +74,14 @@ export default function EventAttendingPoster() {
         setEvent(data)
         if (data.poster_template || data.image) {
           setTemplateImageSrc(data.poster_template || data.image)
+        }
+        if (data.poster_hotspot) {
+          try {
+            localStorage.setItem(
+              `event_poster_hotspot_${data.id}`,
+              typeof data.poster_hotspot === 'string' ? data.poster_hotspot : JSON.stringify(data.poster_hotspot)
+            )
+          } catch (e) {}
         }
       }
     } catch (err) {
@@ -188,6 +196,88 @@ export default function EventAttendingPoster() {
     setFinalImageSrc(null)
   }
 
+  const getEventHotspot = () => {
+    let hotspot = null
+    if (event?.poster_hotspot) {
+      try {
+        hotspot = typeof event.poster_hotspot === 'string' ? JSON.parse(event.poster_hotspot) : event.poster_hotspot
+      } catch (err) {
+        console.error('Error parsing poster_hotspot:', err)
+      }
+    }
+    if (!hotspot && event?.id) {
+      try {
+        const cached = localStorage.getItem(`event_poster_hotspot_${event.id}`)
+        if (cached) hotspot = JSON.parse(cached)
+      } catch (err) {}
+    }
+    return hotspot
+  }
+
+  const applyHotspotPositions = (hotspot, tW, tH) => {
+    if (!hotspot) return false
+    const hX = (hotspot.ratioX != null ? hotspot.ratioX * tW : hotspot.x) || 100
+    const hY = (hotspot.ratioY != null ? hotspot.ratioY * tH : hotspot.y) || 800
+    const hW = (hotspot.ratioW != null ? hotspot.ratioW * tW : hotspot.width) || 400
+    const hH = (hotspot.ratioH != null ? hotspot.ratioH * tH : hotspot.height) || 200
+
+    const nSize = hotspot.nameFontSize || 200
+    const dSize = hotspot.desigFontSize || 162
+    const cSize = hotspot.compFontSize || 150
+
+    setTextFontSize(nSize)
+    setDesigFontSize(dSize)
+    setCompFontSize(cSize)
+
+    if (hotspot.textColor) {
+      setTextColor(hotspot.textColor)
+      setDesigColor(hotspot.textColor)
+      setCompColor(hotspot.textColor)
+    }
+
+    const align = hotspot.textAlign || 'left'
+
+    const getAlignedX = (text, size, isBold = false) => {
+      if (align === 'left') return hX + 16
+      let textWidth = 0
+      try {
+        const measureCanvas = document.createElement('canvas')
+        const mCtx = measureCanvas.getContext('2d')
+        mCtx.font = `${isBold ? 'bold ' : ''}${size}px sans-serif`
+        textWidth = mCtx.measureText(text || 'Delegate').width
+      } catch (e) {
+        textWidth = (text?.length || 8) * size * 0.55
+      }
+
+      if (align === 'center') {
+        return hX + Math.max(0, (hW - textWidth) / 2)
+      }
+      if (align === 'right') {
+        return hX + Math.max(0, hW - textWidth - 16)
+      }
+      return hX + 16
+    }
+
+    const gap = Math.max(10, Math.round((hH - (nSize + dSize + cSize)) / 3))
+    const nY = hY + 12
+    const dY = nY + nSize + gap
+    const cY = dY + dSize + gap
+
+    setTextPos({
+      x: Math.round(getAlignedX(userName, nSize, true)),
+      y: Math.round(nY)
+    })
+    setDesigPos({
+      x: Math.round(getAlignedX(userDesignation, dSize, false)),
+      y: Math.round(dY)
+    })
+    setCompPos({
+      x: Math.round(getAlignedX(userCompany, cSize, false)),
+      y: Math.round(cY)
+    })
+    return true
+  }
+
   useEffect(() => {
     const updateScale = () => {
       if (isAdjusting && templateImgRef.current) {
@@ -211,19 +301,6 @@ export default function EventAttendingPoster() {
             )
             initialX = currentHole.current.centerX - userW / 2
             initialY = currentHole.current.centerY - userH / 2
-
-            setTextPos({
-              x: currentHole.current.x + currentHole.current.width / 2 - 100,
-              y: currentHole.current.y + currentHole.current.height + 20
-            })
-            setDesigPos({
-              x: currentHole.current.x + currentHole.current.width / 2 - 100,
-              y: currentHole.current.y + currentHole.current.height + 80
-            })
-            setCompPos({
-              x: currentHole.current.x + currentHole.current.width / 2 - 100,
-              y: currentHole.current.y + currentHole.current.height + 140
-            })
           } else {
             initialScale = Math.max(templateW / userW, templateH / userH)
             initialX = (templateW - userW) / 2
@@ -232,6 +309,27 @@ export default function EventAttendingPoster() {
 
           setImgScale(initialScale || 1)
           setImgPos({ x: initialX, y: initialY })
+
+          // Automatically place Name, Designation & Company inside Admin Hotspot if marked
+          const hotspot = getEventHotspot()
+          const applied = applyHotspotPositions(hotspot, templateW, templateH)
+
+          if (!applied) {
+            if (currentHole.current) {
+              setTextPos({
+                x: currentHole.current.x + currentHole.current.width / 2 - 100,
+                y: currentHole.current.y + currentHole.current.height + 20
+              })
+              setDesigPos({
+                x: currentHole.current.x + currentHole.current.width / 2 - 100,
+                y: currentHole.current.y + currentHole.current.height + 240
+              })
+              setCompPos({
+                x: currentHole.current.x + currentHole.current.width / 2 - 100,
+                y: currentHole.current.y + currentHole.current.height + 420
+              })
+            }
+          }
         }
       }
     }
@@ -804,6 +902,34 @@ export default function EventAttendingPoster() {
                     className="absolute inset-0 w-full h-full pointer-events-none select-none"
                   />
 
+                  {/* Hotspot Zone Guide */}
+                  {(() => {
+                    const hs = getEventHotspot()
+                    if (!hs) return null
+                    const tW = templateImgRef.current?.width || 1080
+                    const tH = templateImgRef.current?.height || 1080
+                    const hX = (hs.ratioX != null ? hs.ratioX * tW : hs.x) || 100
+                    const hY = (hs.ratioY != null ? hs.ratioY * tH : hs.y) || 800
+                    const hW = (hs.ratioW != null ? hs.ratioW * tW : hs.width) || 400
+                    const hH = (hs.ratioH != null ? hs.ratioH * tH : hs.height) || 200
+
+                    return (
+                      <div
+                        className="absolute border border-indigo-400/40 border-dashed rounded pointer-events-none bg-indigo-500/5 transition-opacity"
+                        style={{
+                          left: hX * displayScale,
+                          top: hY * displayScale,
+                          width: hW * displayScale,
+                          height: hH * displayScale
+                        }}
+                      >
+                        <span className="absolute -top-3.5 left-1 text-[8px] font-semibold text-indigo-400/80 bg-slate-900/70 px-1 rounded">
+                          Hotspot Zone
+                        </span>
+                      </div>
+                    )
+                  })()}
+
                   {/* Name Text Layer */}
                   {userName && (
                     <div
@@ -911,7 +1037,30 @@ export default function EventAttendingPoster() {
 
               {/* Controls Column */}
               <div className="lg:col-span-4 space-y-5 bg-slate-50 dark:bg-slate-950 p-5 rounded-xl border border-slate-200 dark:border-slate-800">
-                <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">Controls</h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">Controls</h4>
+                  {getEventHotspot() && (
+                    <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
+                      Hotspot Active
+                    </span>
+                  )}
+                </div>
+
+                {/* Snap Text to Admin Hotspot Button */}
+                {getEventHotspot() && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const templateW = templateImgRef.current?.width || 1080
+                      const templateH = templateImgRef.current?.height || 1080
+                      applyHotspotPositions(getEventHotspot(), templateW, templateH)
+                    }}
+                    className="w-full py-2 px-3 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                  >
+                    <span className="material-symbols-outlined text-base">center_focus_strong</span>
+                    <span>Reset Text to Event Hotspot</span>
+                  </button>
+                )}
 
                 {/* Photo Scale Slider */}
                 <div className="space-y-2">

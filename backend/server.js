@@ -89,7 +89,7 @@ function saveBase64ToFile(base64Str, idPrefix) {
 
   const mimeType = cleanStr.substring(5, semiColonIndex);
   const base64Data = cleanStr.substring(semiColonIndex + 8).replace(/\s/g, ''); // strip any spaces/newlines
-  
+
   const extParts = mimeType.split('/');
   let ext = extParts[1] || 'png';
   if (ext.includes('+')) {
@@ -114,7 +114,7 @@ async function saveImage(base64Str, idPrefix, folder) {
 
   const mimeType = cleanStr.substring(5, semiColonIndex);
   const base64Data = cleanStr.substring(semiColonIndex + 8).replace(/\s/g, ''); // strip any spaces/newlines
-  
+
   const extParts = mimeType.split('/');
   let ext = extParts[1] || 'png';
   if (ext.includes('+')) {
@@ -201,15 +201,15 @@ async function processBase64FieldsAsync(dataRow, idPrefix) {
 const storage = (isServerless || process.env.CPANEL_UPLOAD_URL)
   ? multer.memoryStorage()
   : multer.diskStorage({
-      destination: (req, file, cb) => {
-        cb(null, uploadsDir);
-      },
-      filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        const ext = path.extname(file.originalname);
-        cb(null, file.fieldname + '-' + uniqueSuffix + ext);
-      }
-    });
+    destination: (req, file, cb) => {
+      cb(null, uploadsDir);
+    },
+    filename: (req, file, cb) => {
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      const ext = path.extname(file.originalname);
+      cb(null, file.fieldname + '-' + uniqueSuffix + ext);
+    }
+  });
 
 const upload = multer({
   storage: storage,
@@ -276,7 +276,7 @@ app.post('/api/storage/upload', upload.single('file'), async (req, res) => {
     if (!isServerless && req.file && req.file.filename) {
       const appUrl = process.env.APP_URL || `http://localhost:${PORT}`;
       const fileUrl = `${appUrl}/uploads/${req.file.filename}`;
-      
+
       return res.status(200).json({
         path: `uploads/${req.file.filename}`,
         publicUrl: fileUrl
@@ -423,7 +423,7 @@ app.post('/api/functions/send-event-invites', async (req, res) => {
 
       const emailPromises = members.map(async (member) => {
         const registrationUrl = `${frontendUrl}/event-registration/${event.id}?member=${member.id}`;
-        
+
         const emailPayload = {
           from: { email: senderEmail, name: senderName },
           to: [{ email: member.email, name: member.full_name }],
@@ -488,7 +488,7 @@ app.post('/api/functions/send-event-invites', async (req, res) => {
 // 4. Centralized Query Execution Endpoint (Translates Supabase JS query syntax to MySQL queries)
 app.post('/api/query', async (req, res) => {
   const { table, action, select, filters, limit, order, range, data, onConflict, single, maybeSingle, countOnly } = req.body;
-  
+
   if (!table) {
     return res.status(400).json({ error: 'Table is required' });
   }
@@ -565,7 +565,9 @@ app.post('/api/query', async (req, res) => {
                  e.date as event__date, e.time as event__time, e.location as event__location,
                  e.address as event__address, e.max_registrations as event__max_registrations,
                  e.fee as event__fee, e.auto_share as event__auto_share, e.status as event__status,
-                 e.image as event__image, e.created_at as event__created_at, e.updated_at as event__updated_at
+                 e.image as event__image, e.poster_template as event__poster_template,
+                 e.poster_hotspot as event__poster_hotspot, e.linkedin_description as event__linkedin_description,
+                 e.created_at as event__created_at, e.updated_at as event__updated_at
                  FROM \`${table}\` t
                  LEFT JOIN events e ON t.event_id = e.id`;
         } else {
@@ -577,7 +579,7 @@ app.post('/api/query', async (req, res) => {
         try {
           const [colRows] = await connection.query(`SHOW COLUMNS FROM \`${table}\``);
           existingColumns = new Set(colRows.map(r => r.Field));
-        } catch (e) {}
+        } catch (e) { }
 
         // Apply filters
         const whereClauses = [];
@@ -693,6 +695,9 @@ app.post('/api/query', async (req, res) => {
                 auto_share: row.event__auto_share,
                 status: row.event__status,
                 image: row.event__image,
+                poster_template: row.event__poster_template,
+                poster_hotspot: row.event__poster_hotspot,
+                linkedin_description: row.event__linkedin_description,
                 created_at: row.event__created_at,
                 updated_at: row.event__updated_at
               };
@@ -726,7 +731,7 @@ app.post('/api/query', async (req, res) => {
       // B. Build query for INSERT
       else if (action === 'insert') {
         const rawInsertRows = Array.isArray(data) ? data : [data];
-        
+
         // Auto-create table if missing
         try {
           await connection.query(`SELECT 1 FROM \`${table}\` LIMIT 1`);
@@ -755,8 +760,8 @@ app.post('/api/query', async (req, res) => {
               if (isIndia) {
                 const last10 = digits.slice(-10);
                 if (last10.length !== 10 || !/^[6-9]\d{9}$/.test(last10)) {
-                  return res.status(400).json({ 
-                    error: `Invalid Indian phone number (${rawRow.phone_number}). Mobile numbers must be exactly 10 digits starting with 6, 7, 8, or 9.` 
+                  return res.status(400).json({
+                    error: `Invalid Indian phone number (${rawRow.phone_number}). Mobile numbers must be exactly 10 digits starting with 6, 7, 8, or 9.`
                   });
                 }
                 rawRow.phone_number = `+91${last10}`;
